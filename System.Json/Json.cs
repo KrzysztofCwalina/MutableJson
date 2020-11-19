@@ -160,7 +160,13 @@ namespace System.Json
             _recordCount++;
             if (_recordCount == 1) return;
             if (_records[_recordCount - 2].InstanceId == record.InstanceId) return;
-            _sorted = false; // this should not be set to false for flat objects.
+
+            if(_objectLocations[record.InstanceId] == 0)
+            {
+                _objectLocations[record.InstanceId] = _recordCount - 1;
+                return;
+            }
+            _sorted = false; 
         }
 
         private void WriteLiteral(ref Record record, Stream stream)
