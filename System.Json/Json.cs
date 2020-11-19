@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 
@@ -9,19 +9,21 @@ namespace System.Json
 {
     public class Json
     {
-        List<Record> _records = new List<Record>(); // this will be flattened to a byte buffer
+        Record[] _records = new Record[24]; // this will be flattened to a byte buffer
+        int _recordCount = 0;
+
         List<string> _strings = new List<string>(); // this will be flatenned to a byte buffer
         bool _sorted = true;
         int _nextInstanceId = 0;
 
-        private JsonObject Root => new JsonObject(this, 0);
+        private JsonObject Root => new JsonObject(this, 0, 0);
 
         public void Set(string name, string value) => Root.Set(name, value);
         public void Set(string name, bool value) => Root.Set(name, value);
         public void Set(string name, long value) => Root.Set(name, value);
         public JsonObject SetObject(string name) => Root.SetObject(name);
 
-        public override string ToString()
+        public string ToJsonString()
         {
             var stream = new MemoryStream();
             WriteTo(stream);
@@ -30,86 +32,139 @@ namespace System.Json
 
         public void WriteTo(Stream stream)
         {
-            if(_records.Count == 0)
+            if (_recordCount == 0)
             {
                 return;
             }
-            if (_records.Count == 1)
+            if (_recordCount == 1)
             {
-                WriteLiteral(_records[0], stream);
+                WriteLiteral(ref _records[0], stream);
                 return;
             }
 
-            if (!_sorted) _records.Sort();
-            _sorted = true;
+            Sort();
+
+            var objectLocations = new int[100]; // TODO: this should not be hard coded
+            for(int i=0; i<_recordCount; i++)
+            {
+                var record = _records[i];
+                if (objectLocations[record.Instance] == 0 && record.Instance != 0) objectLocations[record.Instance] = i;
+            }
 
             var options = new JsonWriterOptions();
             options.Indented = true;
             var writer = new Utf8JsonWriter(stream, options);
-            writer.WriteStartObject();
 
-            string previousPropertyName = "";
-            int currentInstance = 0;
-            int depth = 1;
-            for (int i = 0; i < _records.Count; i++)
-            {
-                var record = _records[i];
-                if (record.Name != previousPropertyName)
-                {
-                    switch (record.Type)
-                    {
-                        case RecordType.False:
-                            CloseObject(writer, currentInstance, record, ref depth);
-                            writer.WriteBoolean(record.Name, false);
-                            break;
-                        case RecordType.True:
-                            CloseObject(writer, currentInstance, record, ref depth);
-                            writer.WriteBoolean(record.Name, true);
-                            break;
-                        case RecordType.Int64:
-                            CloseObject(writer, currentInstance, record, ref depth);
-                            writer.WriteNumber(record.Name, record.Value);
-                            break;
-                        case RecordType.Null:
-                            CloseObject(writer, currentInstance, record, ref depth);
-                            writer.WriteNull(record.Name);
-                            break;
-                        case RecordType.String:
-                            CloseObject(writer, currentInstance, record, ref depth);
-                            writer.WriteString(record.Name, _strings[(int)record.Value]);
-                            break;
-                        case RecordType.Clear:
-                            CloseObject(writer, currentInstance, record, ref depth);
-                            break;
-                        case RecordType.Object:
-                            CloseObject(writer, currentInstance, record, ref depth);
-                            writer.WriteStartObject(record.Name);
-                            depth++;
-                            break;
-                        default: throw new NotImplementedException();
-                    }
-                }
-                previousPropertyName = record.Name;
-
-                if(record.Type == RecordType.Object)
-                {
-                    currentInstance = record.ObjectProperty;
-                }
-                else
-                {
-                    currentInstance = record.Instance;
-                }
-            }
-
-            while (depth-- > 0)
-            {
-                writer.WriteEndObject();
-            }
+            WriteObject(writer, 0, objectLocations);
+            
             writer.Flush();
             stream.Seek(0, SeekOrigin.Begin);
         }
 
-        private void WriteLiteral(Record record, Stream stream)
+        private void WriteObject(Utf8JsonWriter writer, int index, int[] locations, string name = null) 
+        {
+            if (name == null) writer.WriteStartObject();
+            else writer.WriteStartObject(name);
+
+            var record = _records[index];
+            int instance = record.Instance;
+
+            while (true)
+            {
+                switch (record.Type)
+                {
+                    case RecordType.False:
+                        writer.WriteBoolean(record.Name, false);
+                        break;
+                    case RecordType.True:
+                        writer.WriteBoolean(record.Name, true);
+                        break;
+                    case RecordType.Int64:
+                        writer.WriteNumber(record.Name, record.Value);
+                        break;
+                    case RecordType.Null:
+                         writer.WriteNull(record.Name);
+                        break;
+                    case RecordType.String:
+                        writer.WriteString(record.Name, _strings[(int)record.Value]);
+                        break;
+                    case RecordType.Clear:
+                        break;
+                    case RecordType.Object:
+                        int objIndex = locations[record.Value];
+                        WriteObject(writer, objIndex, locations, record.Name);
+                        break;
+                    default: throw new NotImplementedException();
+                }
+           
+                if (++index >= _recordCount) break; 
+                record = _records[index];
+                if (instance != record.Instance) break;
+            } 
+            writer.WriteEndObject();
+        }
+
+        class DuplicateComparer : Comparer<Record>
+        {
+            public new static readonly DuplicateComparer Default = new DuplicateComparer();
+
+            public override int Compare(Record left, Record right)
+            {
+                //var ic = left.Index.CompareTo(right.Index);
+                var instance= left.Instance.CompareTo(right.Instance);
+                if (instance != 0) return instance;
+
+                var name = StringComparer.OrdinalIgnoreCase.Compare(left.Name, right.Name);
+                if (name == 0) return right.Index.CompareTo(left.Index);
+                return name;
+            }
+        }
+        void Sort()
+        {
+            if (!_sorted)
+            {
+                Array.Sort(_records, 0, _recordCount, DuplicateComparer.Default);
+
+                // remove duplicates
+                int firstIndex = 0;
+                var first = _records[0];
+                for (int secondIndex=1; secondIndex<_recordCount; secondIndex++)
+                {
+                    var second = _records[secondIndex];
+                    // if different properties
+                    if(first.Instance != second.Instance || !first.Name.Equals(second.Name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if(secondIndex-firstIndex>1)
+                        {
+                            _records[firstIndex + 1] = second;
+#if DEBUG
+                            _records[secondIndex] = default;
+#endif
+                        }
+                        firstIndex++;
+                        first = second;
+                    }
+                    else
+                    {
+#if DEBUG
+                        _records[secondIndex] = default;
+#endif
+                    }
+                }
+                _recordCount = firstIndex + 1;
+            }
+            _sorted = true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void AddRecord(ref Record record)
+        {
+            _records[_recordCount] = record;
+            _recordCount++;
+            _sorted = false;
+        }
+
+        private void WriteLiteral(ref Record record, Stream stream)
         {
             byte[] payload;
             switch (record.Type)
@@ -129,7 +184,7 @@ namespace System.Json
             stream.Write(payload, 0, payload.Length);
         }
 
-        private static void CloseObject(Utf8JsonWriter writer, int previousInstance, Record record, ref int depth)
+        private static void CloseObject(Utf8JsonWriter writer, int previousInstance, ref Record record, ref int depth)
         {
             if (previousInstance != record.Instance)
             {
@@ -138,28 +193,29 @@ namespace System.Json
             }
         }
 
-        internal void SetCore(int instance, string name, string value)
+        internal void SetCore(int instance, string name, string value, int depth)
         {
-            _sorted = false;
             _strings.Add(value);
-            _records.Add(new Record(instance, _records.Count, name, _strings.Count - 1, RecordType.String, instance));
+            var record = new Record(instance, _recordCount, name, _strings.Count - 1, RecordType.String, depth);
+            AddRecord(ref record);
         }
-        internal void SetCore(int instance, string name, bool value)
+        internal void SetCore(int instance, string name, bool value, int depth)
         {
-            _sorted = false;
-            _records.Add(new Record(instance, _records.Count, name, 0, value ? RecordType.True : RecordType.False, instance));
+            var record = new Record(instance, _recordCount, name, 0, value ? RecordType.True : RecordType.False, depth);
+            AddRecord(ref record);
         }
-        internal void SetCore(int instance, string name, long value)
+        internal void SetCore(int instance, string name, long value, int depth)
         {
-            _sorted = false;
-            _records.Add(new Record(instance, _records.Count, name, value, RecordType.Int64, instance));
+            var record = new Record(instance, _recordCount, name, value, RecordType.Int64, depth);
+            AddRecord(ref record);
         }
 
-        internal JsonObject SetObjectCore(int instance, string name)
+        internal JsonObject SetObjectCore(int instance, string name, int depth)
         {
             var newObjectId = ++_nextInstanceId;
-            _records.Add(new Record(instance, _records.Count, name, newObjectId, RecordType.Object, newObjectId));
-            var obj = new JsonObject(this, newObjectId);
+            var record = new Record(instance, _recordCount, name, newObjectId, RecordType.Object, depth);
+            AddRecord(ref record);
+            var obj = new JsonObject(this, newObjectId, depth+1);
             return obj;
         }
     }
@@ -168,77 +224,61 @@ namespace System.Json
     {
         Json _json;
         int _instance;
+        int _depth;
 
-        internal JsonObject(Json json, int id)
+        internal JsonObject(Json json, int id, int depth)
         {
             _json = json;
             _instance = id;
+            _depth = depth;
         }
 
-        public void Set(string name, string value) => _json.SetCore(_instance, name, value);
-        public void Set(string name, bool value) => _json.SetCore(_instance, name, value);
-        public void Set(string name, long value) => _json.SetCore(_instance, name, value);
-        public JsonObject SetObject(string name) => _json.SetObjectCore(_instance, name);
+        public void Set(string name, string value) => _json.SetCore(_instance, name, value, _depth);
+        public void Set(string name, bool value) => _json.SetCore(_instance, name, value, _depth);
+        public void Set(string name, long value) => _json.SetCore(_instance, name, value, _depth);
+        public JsonObject SetObject(string name) => _json.SetObjectCore(_instance, name, _depth);
     }
 
-    readonly struct Record : IComparable<Record>
+    readonly struct Record
     {
         public readonly int Instance;
-        public readonly int ObjectProperty;
+        public readonly int Depth;
         public readonly RecordType Type;
         public readonly int Index;
         public readonly string Name;
         public readonly long Value;
 
-        public Record(int instance, int index, string name, long value, RecordType type, int objectProperty = -1)
+        public Record(int instance, int index, string name, long value, RecordType type, int depth)
         {
             Index = index;
             Name = name;
             Value = value;
             Type = type;
             Instance = instance;
-            ObjectProperty = objectProperty;
+            Depth = depth;
         }
 
-        private static bool Same(in Record left, in Record right)
+        public int ObjectProperty
         {
-            if (left.Instance != right.Instance) return false;
-            if (left.Name.Equals(right.Name, StringComparison.OrdinalIgnoreCase)) return true;
-            return false;
-        }
-
-        public int CompareTo(Record other)
-        {
-            if (Same(this, other))
+            get
             {
-                return other.Index.CompareTo(Index);
-            }
-
-            var objectProperty = ObjectProperty.CompareTo(other.ObjectProperty);
-            if (objectProperty == 0) {
-                if (Instance != other.Instance) return Instance.CompareTo(other.Instance);
-                var name = StringComparer.InvariantCultureIgnoreCase.Compare(Name, other.Name);
-                if(name == 0) return other.Index.CompareTo(Index);
-                return name;
-            }
-            else
-            {
-                return objectProperty;
+                if (Type == RecordType.Object) return (int)Value;
+                return Instance;
             }
         }
 
         public override string ToString()
-            => $"i:{Instance}, o:{ObjectProperty} v:{Value}, x:{Index}, t:{Type}, n:{Name}";
+            => $"i:{Instance}, d:{Depth} v:{Value}, t:{Type}, n:{Name}";
     }
 
     enum RecordType : int
     {
+        Clear = 0,
         String,
         Null,
         False,
         True,
         Int64,
-        Clear,
         Object
     }
 }

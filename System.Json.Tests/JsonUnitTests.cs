@@ -10,7 +10,7 @@ namespace System.Json.Tests
         {
             var json = new Json();
             json.Set(null, true);
-            var parsed = JsonDocument.Parse(json.ToString()).RootElement;
+            var parsed = JsonDocument.Parse(json.ToJsonString()).RootElement;
             Assert.AreEqual(true, parsed.GetBoolean());
         }
 
@@ -23,7 +23,7 @@ namespace System.Json.Tests
             json.Set("foo", "bar");
             json.Set("bar", true);
 
-            var parsed = JsonDocument.Parse(json.ToString()).RootElement;
+            var parsed = JsonDocument.Parse(json.ToJsonString()).RootElement;
             Assert.AreEqual(true, parsed.GetProperty("bar").GetBoolean());
             Assert.AreEqual("bar", parsed.GetProperty("foo").GetString());
         }
@@ -32,15 +32,22 @@ namespace System.Json.Tests
         public void ObjectProperties()
         {
             var json = new Json();
-            var address = json.SetObject("Address");
+            var addresses = json.SetObject("Addresses");
             var name = json.SetObject("Name");
             name.Set("First", "John");
             name.Set("Last", "Smith");
-            address.Set("Zip", 98052);
-            address.Set("Country", "US");
+
+            var home = addresses.SetObject("Home");
+            var work = addresses.SetObject("Work");
+
+            home.Set("Zip", 98052);
+            home.Set("Country", "US");
+            work.Set("Zip", 98052);
+            work.Set("Country", "US");
+
             name.Set("First", "Jim");
 
-            var jsonText = json.ToString();
+            var jsonText = json.ToJsonString();
             var parsed = JsonDocument.Parse(jsonText).RootElement;
             Assert.AreEqual("Jim", parsed.GetProperty("Name").GetProperty("First").GetString());
         }
