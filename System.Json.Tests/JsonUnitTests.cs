@@ -39,6 +39,8 @@ namespace System.Json.Tests
             var text = json.ToJsonString();
             var parsed = JsonDocument.Parse(text).RootElement;
             Assert.AreEqual(true, parsed.GetProperty("bar").GetBoolean());
+
+            Assert.AreEqual(true, json.Root.GetBoolean("bar"));
         }
 
         [Test]
