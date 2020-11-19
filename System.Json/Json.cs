@@ -17,7 +17,7 @@ namespace System.Json
         bool _sorted = true;
         int _nextInstanceId = 0;
 
-        private JsonObject Root => new JsonObject(this, 0, 0);
+        private JsonObject Root => new JsonObject(this, 0);
 
         public void Set(string name, string value) => Root.Set(name, value);
         public void Set(string name, bool value) => Root.Set(name, value);
@@ -183,13 +183,13 @@ namespace System.Json
             stream.Write(payload, 0, payload.Length);
         }
 
-        internal void SetCore(int instance, string name, string value, int depth)
+        internal void SetCore(int instance, string name, string value)
         {
             _strings.Add(value);
-            var record = new Record(instance, _recordCount, name, _strings.Count - 1, RecordType.String, depth);
+            var record = new Record(instance, _recordCount, name, _strings.Count - 1, RecordType.String);
             AddRecord(ref record);
         }
-        internal void SetCore(int instance, string name, bool value, int depth)
+        internal void SetCore(int instance, string name, bool value)
         {
             if(_sorted)
             {
@@ -199,27 +199,27 @@ namespace System.Json
                     var r = _records[index];
                     if (r.Instance != instance) break;
                     if (r.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) {
-                        _records[index] = new Record(instance, index, name, 0, value ? RecordType.True : RecordType.False, depth);
+                        _records[index] = new Record(instance, index, name, 0, value ? RecordType.True : RecordType.False);
                         return;
                     }
                 }
             }
 
-            var record = new Record(instance, _recordCount, name, 0, value ? RecordType.True : RecordType.False, depth);
+            var record = new Record(instance, _recordCount, name, 0, value ? RecordType.True : RecordType.False);
             AddRecord(ref record);
         }
-        internal void SetCore(int instance, string name, long value, int depth)
+        internal void SetCore(int instance, string name, long value)
         {
-            var record = new Record(instance, _recordCount, name, value, RecordType.Int64, depth);
+            var record = new Record(instance, _recordCount, name, value, RecordType.Int64);
             AddRecord(ref record);
         }
 
-        internal JsonObject SetObjectCore(int instance, string name, int depth)
+        internal JsonObject SetObjectCore(int instance, string name)
         {
             var newObjectId = ++_nextInstanceId;
-            var record = new Record(instance, _recordCount, name, newObjectId, RecordType.Object, depth);
+            var record = new Record(instance, _recordCount, name, newObjectId, RecordType.Object);
             AddRecord(ref record);
-            var obj = new JsonObject(this, newObjectId, depth+1);
+            var obj = new JsonObject(this, newObjectId);
             return obj;
         }
     }
@@ -228,51 +228,38 @@ namespace System.Json
     {
         Json _json;
         int _instance;
-        int _depth;
 
-        internal JsonObject(Json json, int id, int depth)
+        internal JsonObject(Json json, int id)
         {
             _json = json;
             _instance = id;
-            _depth = depth;
         }
 
-        public void Set(string name, string value) => _json.SetCore(_instance, name, value, _depth);
-        public void Set(string name, bool value) => _json.SetCore(_instance, name, value, _depth);
-        public void Set(string name, long value) => _json.SetCore(_instance, name, value, _depth);
-        public JsonObject SetObject(string name) => _json.SetObjectCore(_instance, name, _depth);
+        public void Set(string name, string value) => _json.SetCore(_instance, name, value);
+        public void Set(string name, bool value) => _json.SetCore(_instance, name, value);
+        public void Set(string name, long value) => _json.SetCore(_instance, name, value);
+        public JsonObject SetObject(string name) => _json.SetObjectCore(_instance, name);
     }
 
     readonly struct Record
     {
         public readonly int Instance;
-        public readonly int Depth;
         public readonly RecordType Type;
         public readonly int Index;
         public readonly string Name;
         public readonly long Value;
 
-        public Record(int instance, int index, string name, long value, RecordType type, int depth)
+        public Record(int instance, int index, string name, long value, RecordType type)
         {
             Index = index;
             Name = name;
             Value = value;
             Type = type;
             Instance = instance;
-            Depth = depth;
-        }
-
-        public int ObjectProperty
-        {
-            get
-            {
-                if (Type == RecordType.Object) return (int)Value;
-                return Instance;
-            }
         }
 
         public override string ToString()
-            => $"i:{Instance}, d:{Depth} v:{Value}, t:{Type}, n:{Name}";
+            => $"i:{Instance}, v:{Value}, t:{Type}, n:{Name}";
     }
 
     enum RecordType : int
