@@ -29,6 +29,19 @@ namespace System.Json.Tests
         }
 
         [Test]
+        public void MutationInPlace()
+        {
+            var json = new Json();
+            json.Set("bar", false);
+            json.ToJsonString();
+            json.Set("bar", true);
+
+            var text = json.ToJsonString();
+            var parsed = JsonDocument.Parse(text).RootElement;
+            Assert.AreEqual(true, parsed.GetProperty("bar").GetBoolean());
+        }
+
+        [Test]
         public void ObjectProperties()
         {
             var json = new Json();

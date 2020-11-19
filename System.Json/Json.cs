@@ -9,6 +9,7 @@ namespace System.Json
 {
     public class Json
     {
+        int[] _objectLocations = new int[24];
         Record[] _records = new Record[24]; // this will be flattened to a byte buffer
         int _recordCount = 0;
 
@@ -36,26 +37,24 @@ namespace System.Json
             {
                 return;
             }
-            if (_recordCount == 1)
+            if (_recordCount == 1 && _records[0].Name == null)
             {
                 WriteLiteral(ref _records[0], stream);
                 return;
             }
 
             Sort();
-
-            var objectLocations = new int[100]; // TODO: this should not be hard coded
             for(int i=0; i<_recordCount; i++)
             {
                 var record = _records[i];
-                if (objectLocations[record.Instance] == 0 && record.Instance != 0) objectLocations[record.Instance] = i;
+                if (_objectLocations[record.Instance] == 0 && record.Instance != 0) _objectLocations[record.Instance] = i;
             }
 
             var options = new JsonWriterOptions();
             options.Indented = true;
             var writer = new Utf8JsonWriter(stream, options);
 
-            WriteObject(writer, 0, objectLocations);
+            WriteObject(writer, 0, _objectLocations);
             
             writer.Flush();
             stream.Seek(0, SeekOrigin.Begin);
@@ -161,7 +160,7 @@ namespace System.Json
         {
             _records[_recordCount] = record;
             _recordCount++;
-            _sorted = false;
+            if(_recordCount > 1) _sorted = false; // this should not be set to false for flat objects.
         }
 
         private void WriteLiteral(ref Record record, Stream stream)
@@ -184,15 +183,6 @@ namespace System.Json
             stream.Write(payload, 0, payload.Length);
         }
 
-        private static void CloseObject(Utf8JsonWriter writer, int previousInstance, ref Record record, ref int depth)
-        {
-            if (previousInstance != record.Instance)
-            {
-                writer.WriteEndObject();
-                depth--;
-            }
-        }
-
         internal void SetCore(int instance, string name, string value, int depth)
         {
             _strings.Add(value);
@@ -201,6 +191,20 @@ namespace System.Json
         }
         internal void SetCore(int instance, string name, bool value, int depth)
         {
+            if(_sorted)
+            {
+                int objectIndex = _objectLocations[instance];
+                for(int index = objectIndex; index<_recordCount; index++)
+                {
+                    var r = _records[index];
+                    if (r.Instance != instance) break;
+                    if (r.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) {
+                        _records[index] = new Record(instance, index, name, 0, value ? RecordType.True : RecordType.False, depth);
+                        return;
+                    }
+                }
+            }
+
             var record = new Record(instance, _recordCount, name, 0, value ? RecordType.True : RecordType.False, depth);
             AddRecord(ref record);
         }
