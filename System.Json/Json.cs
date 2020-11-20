@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -9,11 +10,14 @@ namespace System.Json
 {
     public class Json
     {
+        byte[] _data = new byte[1024];
+        int _endOfData = 0;
+
+        // database
         int[] _objectLocations = new int[24]; // this should be merged into records
         Record[] _records = new Record[24]; // this will be flattened to a byte buffer
         int _recordCount = 0;
 
-        List<string> _strings = new List<string>(); // this will be flatenned to a byte buffer
         bool _sorted = true;
         int _nextInstanceId = 0;
 
@@ -44,11 +48,6 @@ namespace System.Json
             }
 
             Sort();
-            for(int i=0; i<_recordCount; i++)
-            {
-                var record = _records[i];
-                if (_objectLocations[record.InstanceId] == 0 && record.InstanceId != 0) _objectLocations[record.InstanceId] = i;
-            }
 
             var options = new JsonWriterOptions();
             options.Indented = true;
@@ -85,7 +84,8 @@ namespace System.Json
                          writer.WriteNull(record.Name);
                         break;
                     case RecordType.String:
-                        writer.WriteString(record.Name, _strings[(int)record.Value]);
+                        var span = record.ValueToSpan();
+                        writer.WriteString(record.Name, _data.AsSpan(span.index, span.length));
                         break;
                     case RecordType.Clear:
                         break;
@@ -150,6 +150,12 @@ namespace System.Json
                     }
                 }
                 _recordCount = firstIndex + 1;
+
+                for (int i = 0; i < _recordCount; i++)
+                {
+                    var record = _records[i];
+                    if (_objectLocations[record.InstanceId] == 0 && record.InstanceId != 0) _objectLocations[record.InstanceId] = i;
+                }
             }
             _sorted = true;
         }
@@ -189,15 +195,25 @@ namespace System.Json
             stream.Write(payload, 0, payload.Length);
         }
 
+        (int, int) AddString(string str)
+        {
+            var utf8 = Encoding.UTF8.GetBytes(str);
+            var free = _data.AsSpan(_endOfData);
+            utf8.AsSpan().CopyTo(free);
+            var result = (_endOfData, utf8.Length);
+            _endOfData += utf8.Length;
+            return result;
+        }
+
         internal void SetCore(int instanceId, string name, string value)
         {
-            _strings.Add(value);  // TODO: when does this get collected?
+            var location = AddString(value);
             if (TryFindRecord(instanceId, name, out int index))
             {
-                _records[index] = new Record(instanceId, index, name, _strings.Count - 1, RecordType.String);
+                _records[index] = new Record(instanceId, index, name, location);
                 return;
             }
-            var newRecord = new Record(instanceId, _recordCount, name, _strings.Count - 1, RecordType.String);
+            var newRecord = new Record(instanceId, _recordCount, name, location);
             AddRecord(ref newRecord);
         }
 
@@ -301,10 +317,30 @@ namespace System.Json
             InstanceId = instance;
         }
 
+        public Record(int instanceId, int index, string name, (int index, int length) stringLocation) : this()
+        {
+            Type = RecordType.String;
+            InstanceId = instanceId;
+            Index = index;
+            Name = name;
+
+            long value = stringLocation.index;
+            value = value << 32;
+            value |= (long)stringLocation.length;
+            Value = value;
+        }
+
         public override string ToString()
             => $"i:{InstanceId}, v:{Value}, t:{Type}, n:{Name}";
 
         public int CompareName(string name) => StringComparer.OrdinalIgnoreCase.Compare(Name, name);
+
+        internal (int index, int length) ValueToSpan()
+        {
+            int index = (int)(Value >> 32);
+            int length = (int)(Value);
+            return (index, length);
+        }
     }
 
     enum RecordType : int
