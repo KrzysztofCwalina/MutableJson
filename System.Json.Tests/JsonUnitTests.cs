@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using System.IO;
 using System.Text.Json;
 
 namespace System.Json.Tests
@@ -10,8 +11,7 @@ namespace System.Json.Tests
         {
             var json = new Json();
             json.Set(null, true);
-            var parsed = JsonDocument.Parse(json.ToJsonString()).RootElement;
-            Assert.AreEqual(true, parsed.GetBoolean());
+            Assert.AreEqual(true, json.Root.GetBoolean(null));
         }
 
         [Test]
@@ -58,6 +58,35 @@ namespace System.Json.Tests
             name.Set("First", "Jim");
 
             var nameObject = json.Root.GetObject("Name");
+            var firstName = nameObject.GetString("First");
+            Assert.AreEqual("Jim", firstName);
+        }
+
+        [Test]
+        public void Serialization() {
+            var json = new Json();
+            var addresses = json.SetObject("Addresses");
+            var name = json.SetObject("Name");
+            name.Set("First", "John");
+            name.Set("Last", "Smith");
+
+            var home = addresses.SetObject("Home");
+            var work = addresses.SetObject("Work");
+
+            home.Set("Zip", 98052);
+            home.Set("Country", "US");
+            work.Set("Zip", 98052);
+            work.Set("Country", "US");
+
+            name.Set("First", "Jim");
+
+            var stream = new MemoryStream();
+            json.WriteTo(stream, 'b');
+            stream.Position = 0;
+
+            var deserialized = new Json(stream.ToArray());
+
+            var nameObject = deserialized.Root.GetObject("Name");
             var firstName = nameObject.GetString("First");
             Assert.AreEqual("Jim", firstName);
         }
