@@ -23,9 +23,8 @@ namespace System.Json.Tests
             json.Set("foo", "bar");
             json.Set("bar", true);
 
-            var parsed = JsonDocument.Parse(json.ToJsonString()).RootElement;
-            Assert.AreEqual(true, parsed.GetProperty("bar").GetBoolean());
-            Assert.AreEqual("bar", parsed.GetProperty("foo").GetString());
+            Assert.AreEqual(true, json.Root.GetBoolean("bar"));
+            Assert.AreEqual("bar", json.Root.GetString("foo"));
         }
 
         [Test]
@@ -35,10 +34,6 @@ namespace System.Json.Tests
             json.Set("bar", false);
             json.ToJsonString();
             json.Set("bar", true);
-
-            var text = json.ToJsonString();
-            var parsed = JsonDocument.Parse(text).RootElement;
-            Assert.AreEqual(true, parsed.GetProperty("bar").GetBoolean());
 
             Assert.AreEqual(true, json.Root.GetBoolean("bar"));
         }
@@ -62,9 +57,9 @@ namespace System.Json.Tests
 
             name.Set("First", "Jim");
 
-            var jsonText = json.ToJsonString();
-            var parsed = JsonDocument.Parse(jsonText).RootElement;
-            Assert.AreEqual("Jim", parsed.GetProperty("Name").GetProperty("First").GetString());
+            var nameObject = json.Root.GetObject("Name");
+            var firstName = nameObject.GetString("First");
+            Assert.AreEqual("Jim", firstName);
         }
     }
 }
