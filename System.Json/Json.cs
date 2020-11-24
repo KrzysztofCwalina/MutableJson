@@ -47,7 +47,7 @@ namespace System.Json
                 return;
             }
 
-            Sort();
+            SortRecords();
 
             var options = new JsonWriterOptions();
             options.Indented = true;
@@ -117,7 +117,7 @@ namespace System.Json
                 return name;
             }
         }
-        void Sort()
+        void SortRecords()
         {
             if (!_sorted)
             {
@@ -240,6 +240,7 @@ namespace System.Json
         internal JsonObject SetObjectCore(int instance, string name)
         {
             var newObjectId = ++_nextInstanceId;
+            // TODO: this needs to clear existing property
             var record = new Record(instance, _recordCount, name, newObjectId, RecordType.Object);
             AddRecord(ref record);
             var obj = new JsonObject(this, newObjectId);
