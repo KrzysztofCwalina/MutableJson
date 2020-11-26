@@ -57,15 +57,15 @@ namespace System.Json.Tests
             var span = buffer.AsSpan();
 
             BinaryPrimitives.WriteInt32LittleEndian(span.Slice(Record.OffsetType), (int)RecordType.Null);
-            var nullJson = new Json(buffer).Root;
+            var nullJson = Json.Deserialize(buffer).Root;
             Assert.True(nullJson.IsNull);
 
             BinaryPrimitives.WriteInt32LittleEndian(span.Slice(Record.OffsetType), (int)RecordType.True);
-            var trueJson = new Json(buffer).Root;
+            var trueJson = Json.Deserialize(buffer).Root;
             Assert.True(trueJson.ToBoolean());
 
             BinaryPrimitives.WriteInt32LittleEndian(span.Slice(Record.OffsetType), (int)RecordType.False);
-            var falseJson = new Json(buffer).Root;
+            var falseJson = Json.Deserialize(buffer).Root;
             Assert.False(falseJson.ToBoolean());
         }
 
@@ -78,7 +78,7 @@ namespace System.Json.Tests
             BinaryPrimitives.WriteInt32LittleEndian(span.Slice(Record.OffsetType), (int)RecordType.Int64);
             BinaryPrimitives.WriteInt64LittleEndian(span.Slice(Record.OffsetValue), number);
 
-            var json = new Json(buffer).Root;
+            var json = Json.Deserialize(buffer).Root;
             Assert.True(json.JsonType == RecordType.Int64);
             Assert.AreEqual(number, json.ToInt64());
 

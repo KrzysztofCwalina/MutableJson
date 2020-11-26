@@ -40,6 +40,10 @@ namespace System.Json
             get => BinaryPrimitives.ReadInt32LittleEndian(_record.Slice(Record.OffsetRangeLength));
             set => BinaryPrimitives.WriteInt32LittleEndian(_record.Slice(Record.OffsetRangeLength), value);
         }
+        public int DataLength {
+            get => BinaryPrimitives.ReadInt32LittleEndian(_record.Slice(Record.OffsetRangeStart));
+            set => BinaryPrimitives.WriteInt32LittleEndian(_record.Slice(Record.OffsetRangeStart), value);
+        }
     }
 
     public readonly ref struct TypeAndNameRecord
